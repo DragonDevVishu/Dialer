@@ -95,8 +95,16 @@ app.get('/login', (req, res) => {
 });
 
 app.post('/login', (req, res) => {
-  const submitted = req.body.password || '';
-  if (process.env.APP_PASSWORD && submitted === process.env.APP_PASSWORD) {
+  const submitted = (req.body.password || '').trim();
+  const expected = (process.env.APP_PASSWORD || '').trim();
+
+  // TEMPORARY debug log — only prints lengths, never the actual password.
+  // Remove this once login is working.
+  console.log(
+    `[login attempt] submitted length=${submitted.length}, expected length=${expected.length}, expected set=${!!process.env.APP_PASSWORD}`
+  );
+
+  if (expected && submitted === expected) {
     req.session.authenticated = true;
     return res.redirect('/');
   }

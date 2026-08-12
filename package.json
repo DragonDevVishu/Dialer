@@ -8,6 +8,7 @@
   "dependencies": {
     "dotenv": "^17.0.0",
     "express": "^5.1.0",
+    "express-session": "^1.19.0",
     "twilio": "^5.8.0"
   }
 }

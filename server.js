@@ -104,6 +104,10 @@ app.get('/status', (req, res) => {
   res.json({ configured });
 });
 
+app.get("/", (req, res) => {
+  res.sendFile(__dirname + "/index.html");
+});
+
 app.listen(PORT, () => {
   console.log(`✅ Twilio dialer running at http://localhost:${PORT}`);
   console.log(`   Open this in Chrome (Twilio's Voice SDK needs a modern browser)`);

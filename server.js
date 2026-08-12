@@ -27,6 +27,7 @@ const {
   TWILIO_API_KEY_SECRET,
   TWILIO_TWIML_APP_SID,
   TWILIO_CALLER_IDS, // comma separated list of your Twilio numbers, e.g. +19146043745,+447576899043
+  FALLBACK_CELL_NUMBER, // your personal cell, e.g. +918329202788 — rung if the browser doesn't answer
 } = process.env;
 
 // Parse the comma separated list into a clean array, e.g.
@@ -66,7 +67,7 @@ app.get('/token', (req, res) => {
   const identity = 'dialer-user';
   const voiceGrant = new VoiceGrant({
     outgoingApplicationSid: TWILIO_TWIML_APP_SID,
-    incomingAllow: false, // this dialer only makes outbound calls
+    incomingAllow: true, // lets the browser receive calls routed to it via /incoming
   });
   const token = new AccessToken(
     TWILIO_ACCOUNT_SID,
@@ -110,6 +111,54 @@ app.post('/voice', (req, res) => {
   } else {
     twiml.say('The number to dial was missing or invalid.');
   }
+  res.type('text/xml');
+  res.send(twiml.toString());
+});
+
+// 3. Twilio calls THIS URL when someone dials one of your real Twilio
+//    numbers from the outside world (a real caller on the PSTN). This is
+//    NOT hit when you place a call from the browser — that goes to /voice.
+//    Configure this as the "A call comes in" webhook on EACH of your
+//    Twilio numbers, in the Twilio Console (Phone Numbers → your number →
+//    Voice Configuration → A call comes in → Webhook → https://<your
+//    render url>/incoming). Do this for both +19146043745 and
+//    +447576899043 — they can both point at the same URL.
+app.post('/incoming', (req, res) => {
+  const twiml = new twilio.twiml.VoiceResponse();
+  const calledNumber = req.body.To; // which of your Twilio numbers was dialed
+  const caller = req.body.From; // who's calling
+
+  // Step 1: ring the browser softphone (identity must match /token).
+  // If the tab isn't open / nobody answers within 20s, execution falls
+  // through to step 2 below.
+  const dial = twiml.dial({ timeout: 20 });
+  const client = dial.client();
+  client.identity('dialer-user');
+  client.parameter({ name: 'CalledNumber', value: calledNumber || '' });
+
+  // Step 2: forward to your personal cell. Only reached if step 1 timed
+  // out / wasn't answered. Caller ID is set to the Twilio number that was
+  // originally dialed, so your phone shows which number the call came in
+  // on rather than a raw Twilio-internal number.
+  if (FALLBACK_CELL_NUMBER) {
+    const cellDial = twiml.dial({
+      timeout: 20,
+      callerId: calledNumber || CALLER_ID_LIST[0],
+    });
+    cellDial.number(FALLBACK_CELL_NUMBER);
+  }
+
+  // Step 3: only reached if step 2 also wasn't answered (or isn't
+  // configured) — take a voicemail instead of just hanging up.
+  twiml.say('Sorry, nobody is available right now. Please leave a message after the tone.');
+  twiml.record({
+    maxLength: 120,
+    playBeep: true,
+    trim: 'trim-silence',
+  });
+  twiml.say('No message was received. Goodbye.');
+  twiml.hangup();
+
   res.type('text/xml');
   res.send(twiml.toString());
 });

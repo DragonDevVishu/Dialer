@@ -1,0 +1,668 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Softphone — Twilio Dialer</title>
+  <!-- Twilio Voice Web SDK -->
+  <script src="https://cdn.jsdelivr.net/npm/@twilio/voice-sdk@2.11.1/dist/twilio.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0f1117;
+      --surface: #1a1d27;
+      --surface2: #22263a;
+      --border: #2e3248;
+      --accent: #4f6ef7;
+      --accent-glow: rgba(79,110,247,0.18);
+      --green: #22c55e;
+      --red: #ef4444;
+      --amber: #f59e0b;
+      --text: #e8eaf6;
+      --muted: #7c83a8;
+      --font: 'Segoe UI', system-ui, sans-serif;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1rem;
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      width: 100%;
+      max-width: 420px;
+      padding: 2rem;
+      box-shadow: 0 8px 40px rgba(0,0,0,0.5);
+    }
+
+    .header {
+      text-align: center;
+      margin-bottom: 1.8rem;
+    }
+
+    .header h1 {
+      font-size: 1.3rem;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+    }
+
+    .status-row {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      margin-top: 6px;
+    }
+
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--muted);
+      transition: background 0.3s;
+    }
+    .dot.connected { background: var(--green); box-shadow: 0 0 6px var(--green); }
+    .dot.calling { background: var(--amber); box-shadow: 0 0 6px var(--amber); animation: pulse 1s infinite; }
+    .dot.error { background: var(--red); }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; } 50% { opacity: 0.3; }
+    }
+
+    .status-text {
+      font-size: 0.8rem;
+      color: var(--muted);
+    }
+
+    .section-label {
+      font-size: 0.7rem;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 0.6rem;
+    }
+
+    .info-box {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1rem;
+      font-size: 0.82rem;
+      color: var(--muted);
+      line-height: 1.5;
+      margin-bottom: 1rem;
+    }
+
+    .btn {
+      width: 100%;
+      padding: 10px;
+      border-radius: 10px;
+      border: none;
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.2s, transform 0.1s;
+    }
+
+    .btn:active { transform: scale(0.98); }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    .btn-primary { background: var(--accent); color: #fff; }
+    .btn-primary:hover:not(:disabled) { opacity: 0.88; }
+    .btn-danger { background: var(--red); color: #fff; }
+    .btn-outline {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text);
+    }
+    .btn-outline:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+
+    .divider {
+      border: none;
+      border-top: 1px solid var(--border);
+      margin: 1.4rem 0;
+    }
+
+    /* Dialpad */
+    .dial-input-wrap {
+      position: relative;
+      margin-bottom: 0.8rem;
+    }
+
+    #dial-number {
+      width: 100%;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      font-size: 1.4rem;
+      letter-spacing: 0.08em;
+      text-align: center;
+      padding: 12px 40px 12px 12px;
+      outline: none;
+    }
+
+    #dial-number:focus { border-color: var(--accent); }
+
+    .clear-btn {
+      position: absolute;
+      right: 10px;
+      top: 50%;
+      transform: translateY(-50%);
+      background: none;
+      border: none;
+      color: var(--muted);
+      font-size: 1.1rem;
+      cursor: pointer;
+      padding: 4px;
+    }
+    .clear-btn:hover { color: var(--text); }
+
+    .dialpad {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 0.5rem;
+      margin-bottom: 1rem;
+    }
+
+    .key {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      color: var(--text);
+      font-size: 1.1rem;
+      font-weight: 500;
+      padding: 14px 0;
+      cursor: pointer;
+      transition: background 0.15s, border-color 0.15s;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 2px;
+    }
+
+    .key:hover { background: var(--border); border-color: var(--accent); }
+    .key:active { transform: scale(0.95); }
+
+    .key sub {
+      font-size: 0.55rem;
+      color: var(--muted);
+      letter-spacing: 0.1em;
+    }
+
+    .call-row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 0.6rem;
+    }
+
+    /* Active Call UI */
+    .call-active {
+      text-align: center;
+      padding: 1rem 0;
+    }
+
+    .calling-number {
+      font-size: 1.5rem;
+      font-weight: 600;
+      letter-spacing: 0.05em;
+      margin-bottom: 4px;
+    }
+
+    .call-timer {
+      font-size: 0.9rem;
+      color: var(--muted);
+      font-variant-numeric: tabular-nums;
+      margin-bottom: 1.5rem;
+    }
+
+    .call-controls {
+      display: flex;
+      justify-content: center;
+      gap: 1rem;
+      margin-bottom: 1.2rem;
+    }
+
+    .ctrl-btn {
+      width: 54px;
+      height: 54px;
+      border-radius: 50%;
+      border: 1px solid var(--border);
+      background: var(--surface2);
+      color: var(--text);
+      font-size: 1.2rem;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.15s;
+    }
+
+    .ctrl-btn:hover { background: var(--border); }
+    .ctrl-btn.active { background: var(--accent); border-color: var(--accent); }
+
+    .hangup-btn {
+      background: var(--red);
+      border-color: var(--red);
+      color: #fff;
+      width: 64px;
+      height: 64px;
+      font-size: 1.4rem;
+    }
+
+    .hangup-btn:hover { opacity: 0.85; }
+
+    /* Incoming Call UI */
+    .incoming {
+      text-align: center;
+      padding: 0.5rem 0;
+    }
+
+    .incoming h3 {
+      font-size: 0.9rem;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+
+    .incoming-number {
+      font-size: 1.6rem;
+      font-weight: 600;
+      margin-bottom: 1.2rem;
+    }
+
+    .incoming-btns {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.8rem;
+    }
+
+    .btn-green { background: var(--green); color: #fff; }
+
+    /* Activity Log */
+    .log {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 0.7rem 0.9rem;
+      font-size: 0.75rem;
+      color: var(--muted);
+      max-height: 100px;
+      overflow-y: auto;
+      font-family: monospace;
+      line-height: 1.6;
+    }
+
+    .log p { margin: 0; }
+    .log .ok { color: var(--green); }
+    .log .err { color: var(--red); }
+    .log .info { color: var(--accent); }
+
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+
+<div class="card">
+  <div class="header">
+    <h1>📞 Twilio Softphone</h1>
+    <div class="status-row">
+      <div class="dot" id="status-dot"></div>
+      <span class="status-text" id="status-text">Initializing...</span>
+    </div>
+  </div>
+
+  <!-- CONFIG / INITIALIZATION PANEL -->
+  <div id="config-panel">
+    <div class="info-box">
+      Twilio credentials are secure on your server. Click below to fetch a session token and initialize WebRTC voice calling.
+    </div>
+    <button class="btn btn-primary" id="connect-btn" onclick="initDevice()">Connect Softphone</button>
+  </div>
+
+  <!-- DIALPAD PANEL -->
+  <div id="dialpad-panel" class="hidden">
+    <hr class="divider" style="margin-top:0">
+
+    <p class="section-label">Dial</p>
+    <div class="dial-input-wrap">
+      <input type="tel" id="dial-number" placeholder="+15550000000" />
+      <button class="clear-btn" onclick="clearLast()">⌫</button>
+    </div>
+
+    <div class="dialpad">
+      <button class="key" onclick="pad('1')">1<sub></sub></button>
+      <button class="key" onclick="pad('2')">2<sub>ABC</sub></button>
+      <button class="key" onclick="pad('3')">3<sub>DEF</sub></button>
+      <button class="key" onclick="pad('4')">4<sub>GHI</sub></button>
+      <button class="key" onclick="pad('5')">5<sub>JKL</sub></button>
+      <button class="key" onclick="pad('6')">6<sub>MNO</sub></button>
+      <button class="key" onclick="pad('7')">7<sub>PQRS</sub></button>
+      <button class="key" onclick="pad('8')">8<sub>TUV</sub></button>
+      <button class="key" onclick="pad('9')">9<sub>WXYZ</sub></button>
+      <button class="key" onclick="pad('*')">*</button>
+      <button class="key" onclick="pad('0')">0<sub>+</sub></button>
+      <button class="key" onclick="pad('#')">#</button>
+    </div>
+
+    <div class="call-row">
+      <button class="btn btn-primary" id="call-btn" onclick="makeCall()">📞 Call</button>
+      <button class="btn btn-outline" onclick="disconnect()" title="Disconnect Softphone">✕</button>
+    </div>
+  </div>
+
+  <!-- INCOMING CALL PANEL -->
+  <div id="incoming-panel" class="hidden">
+    <hr class="divider" style="margin-top:0">
+    <div class="incoming">
+      <h3>Incoming Call</h3>
+      <div class="incoming-number" id="incoming-number">Unknown</div>
+      <div class="incoming-btns">
+        <button class="btn btn-green" onclick="answerCall()">✅ Answer</button>
+        <button class="btn btn-danger" onclick="rejectCall()">❌ Reject</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ACTIVE CALL PANEL -->
+  <div id="active-panel" class="hidden">
+    <hr class="divider" style="margin-top:0">
+    <div class="call-active">
+      <div class="calling-number" id="active-number">—</div>
+      <div class="call-timer" id="call-timer">00:00</div>
+      <div class="call-controls">
+        <button class="ctrl-btn" id="mute-btn" onclick="toggleMute()" title="Mute">🎙️</button>
+        <button class="ctrl-btn hangup-btn" onclick="hangup()" title="Hang up">📵</button>
+      </div>
+    </div>
+  </div>
+
+  <hr class="divider">
+  <p class="section-label">Activity Log</p>
+  <div class="log" id="log"><p class="info">Ready. Connecting to server...</p></div>
+</div>
+
+<audio id="ring-audio" loop src="https://www.soundjay.com/phone/sounds/phone-ringing-3.mp3"></audio>
+
+<script>
+  let device = null;
+  let currentCall = null;
+  let timerInterval = null;
+  let timerSeconds = 0;
+  let isMuted = false;
+
+  function log(msg, type = '') {
+    const el = document.getElementById('log');
+    const p = document.createElement('p');
+    p.className = type;
+    const time = new Date().toLocaleTimeString();
+    p.textContent = `[${time}] ${msg}`;
+    el.appendChild(p);
+    el.scrollTop = el.scrollHeight;
+  }
+
+  function setStatus(text, state) {
+    document.getElementById('status-text').textContent = text;
+    const dot = document.getElementById('status-dot');
+    dot.className = 'dot ' + (state || '');
+  }
+
+  function show(id) { document.getElementById(id).classList.remove('hidden'); }
+  function hide(id) { document.getElementById(id).classList.add('hidden'); }
+
+  function pad(digit) {
+    const el = document.getElementById('dial-number');
+    el.value += digit;
+    // Send DTMF tones if currently in active call
+    if (currentCall) {
+      currentCall.sendDigits(digit);
+    }
+  }
+
+  function clearLast() {
+    const el = document.getElementById('dial-number');
+    el.value = el.value.slice(0, -1);
+  }
+
+  async function initDevice() {
+    const connectBtn = document.getElementById('connect-btn');
+    if (connectBtn) {
+      connectBtn.disabled = true;
+      connectBtn.textContent = 'Connecting…';
+    }
+
+    setStatus('Connecting…', 'calling');
+    log('Fetching Access Token from server...', 'info');
+
+    try {
+      const res = await fetch('/token');
+      const data = await res.json();
+
+      if (!res.ok || data.error) {
+        const err = data.error || 'Failed to fetch access token';
+        log(`Error: ${err}`, 'err');
+        if (data.hint) log(`Hint: ${data.hint}`, 'info');
+        setStatus('Config Error', 'error');
+        if (connectBtn) {
+          connectBtn.disabled = false;
+          connectBtn.textContent = 'Retry Connection';
+        }
+        return;
+      }
+
+      log(`Token received for identity: ${data.identity}`, 'ok');
+
+      if (device) {
+        device.destroy();
+      }
+
+      // Initialize Twilio Device with Token
+      device = new Twilio.Device(data.token, {
+        logLevel: 1,
+        codecPreferences: ['opus', 'pcmu']
+      });
+
+      device.on('registered', () => {
+        setStatus('Connected — Ready to call', 'connected');
+        log('Registered with Twilio ✓', 'ok');
+        hide('config-panel');
+        show('dialpad-panel');
+      });
+
+      device.on('error', (twilioError) => {
+        log(`Twilio Error: ${twilioError.message} (Code: ${twilioError.code})`, 'err');
+        setStatus('Device Error', 'error');
+      });
+
+      device.on('incoming', (call) => {
+        currentCall = call;
+        setupCallListeners(call);
+        const caller = call.parameters.From || 'Unknown Caller';
+        document.getElementById('incoming-number').textContent = caller;
+        show('incoming-panel');
+        hide('dialpad-panel');
+        log(`Incoming call from ${caller}`, 'info');
+        try { document.getElementById('ring-audio').play(); } catch(e) {}
+      });
+
+      await device.register();
+
+    } catch (e) {
+      log('Connection failed: ' + e.message, 'err');
+      setStatus('Connection Failed', 'error');
+      if (connectBtn) {
+        connectBtn.disabled = false;
+        connectBtn.textContent = 'Connect Softphone';
+      }
+    }
+  }
+
+  async function makeCall() {
+    if (!device) {
+      log('Device not initialized.', 'err');
+      return;
+    }
+
+    let number = document.getElementById('dial-number').value.trim();
+    if (!number) { log('Enter a number to dial.', 'err'); return; }
+
+    // Auto-format: If no +, default to US +1
+    if (!number.startsWith('+')) {
+      if (number.startsWith('00')) number = '+' + number.slice(2);
+      else number = '+1' + number.replace(/\D/g, '');
+    }
+
+    log(`Dialing ${number}…`, 'info');
+    setStatus('Calling…', 'calling');
+
+    try {
+      currentCall = await device.connect({
+        params: { To: number }
+      });
+
+      document.getElementById('active-number').textContent = number;
+      hide('dialpad-panel');
+      show('active-panel');
+
+      setupCallListeners(currentCall);
+
+    } catch (e) {
+      log('Call failed: ' + e.message, 'err');
+      setStatus('Connected — Ready to call', 'connected');
+    }
+  }
+
+  function setupCallListeners(call) {
+    call.on('accept', () => {
+      log('Call connected ✓', 'ok');
+      setStatus('In call', 'connected');
+      startTimer();
+    });
+
+    call.on('disconnect', () => {
+      endCall('Call ended.');
+    });
+
+    call.on('reject', () => {
+      endCall('Call rejected.');
+    });
+
+    call.on('cancel', () => {
+      endCall('Call canceled.');
+    });
+
+    call.on('error', (e) => {
+      log('Call error: ' + e.message, 'err');
+      endCall('Call disconnected due to error.');
+    });
+  }
+
+  function answerCall() {
+    if (!currentCall) return;
+    try { document.getElementById('ring-audio').pause(); } catch(e) {}
+    currentCall.accept();
+    hide('incoming-panel');
+    document.getElementById('active-number').textContent = document.getElementById('incoming-number').textContent;
+    show('active-panel');
+    startTimer();
+    log('Call answered.', 'ok');
+    setStatus('In call', 'connected');
+  }
+
+  function rejectCall() {
+    if (!currentCall) return;
+    try { document.getElementById('ring-audio').pause(); } catch(e) {}
+    currentCall.reject();
+    currentCall = null;
+    hide('incoming-panel');
+    show('dialpad-panel');
+    log('Call rejected.', '');
+    setStatus('Connected — Ready to call', 'connected');
+  }
+
+  function hangup() {
+    if (currentCall) {
+      currentCall.disconnect();
+    }
+    endCall('Call ended by user.');
+  }
+
+  function endCall(msg) {
+    try { document.getElementById('ring-audio').pause(); } catch(e) {}
+    stopTimer();
+    currentCall = null;
+    isMuted = false;
+    document.getElementById('mute-btn').classList.remove('active');
+    document.getElementById('mute-btn').textContent = '🎙️';
+    hide('active-panel');
+    hide('incoming-panel');
+    show('dialpad-panel');
+    setStatus('Connected — Ready to call', 'connected');
+    log(msg, '');
+  }
+
+  function toggleMute() {
+    if (!currentCall) return;
+    isMuted = !isMuted;
+    currentCall.mute(isMuted);
+    document.getElementById('mute-btn').classList.toggle('active', isMuted);
+    document.getElementById('mute-btn').textContent = isMuted ? '🔇' : '🎙️';
+    log(isMuted ? 'Muted.' : 'Unmuted.', '');
+  }
+
+  function startTimer() {
+    timerSeconds = 0;
+    clearInterval(timerInterval);
+    timerInterval = setInterval(() => {
+      timerSeconds++;
+      const m = String(Math.floor(timerSeconds / 60)).padStart(2, '0');
+      const s = String(timerSeconds % 60).padStart(2, '0');
+      document.getElementById('call-timer').textContent = `${m}:${s}`;
+    }, 1000);
+  }
+
+  function stopTimer() {
+    clearInterval(timerInterval);
+    document.getElementById('call-timer').textContent = '00:00';
+  }
+
+  function disconnect() {
+    if (device) {
+      device.destroy();
+      device = null;
+    }
+    hide('dialpad-panel');
+    show('config-panel');
+    const connectBtn = document.getElementById('connect-btn');
+    if (connectBtn) {
+      connectBtn.disabled = false;
+      connectBtn.textContent = 'Connect Softphone';
+    }
+    setStatus('Not connected', '');
+    log('Disconnected.', '');
+  }
+
+  // Auto-connect on page load
+  window.addEventListener('DOMContentLoaded', () => {
+    initDevice();
+  });
+
+  // Pressing Enter key places a call
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !document.getElementById('dialpad-panel').classList.contains('hidden')) {
+      makeCall();
+    }
+  });
+</script>
+</body>
+</html>

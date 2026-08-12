@@ -155,6 +155,25 @@
 
     #dial-number:focus { border-color: var(--accent); }
 
+    #caller-id-select {
+      width: 100%;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      font-size: 0.95rem;
+      padding: 10px 12px;
+      outline: none;
+      margin-bottom: 0.8rem;
+      appearance: none;
+      -webkit-appearance: none;
+      background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='%237c83a8'><path d='M5.5 7.5l4.5 4.5 4.5-4.5' stroke='%237c83a8' stroke-width='1.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+      background-repeat: no-repeat;
+      background-position: right 12px center;
+    }
+
+    #caller-id-select:focus { border-color: var(--accent); }
+
     .clear-btn {
       position: absolute;
       right: 10px;
@@ -334,6 +353,9 @@
   <div id="dialpad-panel" class="hidden">
     <hr class="divider" style="margin-top:0">
 
+    <p class="section-label">Call From</p>
+    <select id="caller-id-select"></select>
+
     <p class="section-label">Dial</p>
     <div class="dial-input-wrap">
       <input type="tel" id="dial-number" placeholder="+15550000000" />
@@ -434,6 +456,35 @@
     el.value = el.value.slice(0, -1);
   }
 
+  async function loadCallerIds() {
+    const select = document.getElementById('caller-id-select');
+    try {
+      const res = await fetch('/numbers');
+      const data = await res.json();
+      const numbers = (data && data.numbers) || [];
+
+      select.innerHTML = '';
+      if (!numbers.length) {
+        const opt = document.createElement('option');
+        opt.textContent = 'No numbers configured';
+        select.appendChild(opt);
+        log('No caller ID numbers configured on the server.', 'err');
+        return;
+      }
+
+      numbers.forEach((num) => {
+        const opt = document.createElement('option');
+        opt.value = num;
+        opt.textContent = num;
+        select.appendChild(opt);
+      });
+
+      log(`Loaded ${numbers.length} caller ID number(s).`, 'ok');
+    } catch (e) {
+      log('Failed to load caller ID numbers: ' + e.message, 'err');
+    }
+  }
+
   async function initDevice() {
     const connectBtn = document.getElementById('connect-btn');
     if (connectBtn) {
@@ -477,6 +528,7 @@
         log('Registered with Twilio ✓', 'ok');
         hide('config-panel');
         show('dialpad-panel');
+        loadCallerIds();
       });
 
       device.on('error', (twilioError) => {
@@ -522,12 +574,19 @@
       else number = '+1' + number.replace(/\D/g, '');
     }
 
-    log(`Dialing ${number}…`, 'info');
+    const callerIdSelect = document.getElementById('caller-id-select');
+    const callerId = callerIdSelect && callerIdSelect.value;
+    if (!callerId) {
+      log('No caller ID number selected/available.', 'err');
+      return;
+    }
+
+    log(`Dialing ${number} from ${callerId}…`, 'info');
     setStatus('Calling…', 'calling');
 
     try {
       currentCall = await device.connect({
-        params: { To: number }
+        params: { To: number, CallerId: callerId }
       });
 
       document.getElementById('active-number').textContent = number;
@@ -665,4 +724,5 @@
   });
 </script>
 </body>
+</html>
 </html>

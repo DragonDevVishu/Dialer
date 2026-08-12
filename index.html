@@ -389,6 +389,7 @@
     <div class="incoming">
       <h3>Incoming Call</h3>
       <div class="incoming-number" id="incoming-number">Unknown</div>
+      <div class="status-text" id="incoming-called-number" style="margin-bottom: 1rem;"></div>
       <div class="incoming-btns">
         <button class="btn btn-green" onclick="answerCall()">✅ Answer</button>
         <button class="btn btn-danger" onclick="rejectCall()">❌ Reject</button>
@@ -540,10 +541,15 @@
         currentCall = call;
         setupCallListeners(call);
         const caller = call.parameters.From || 'Unknown Caller';
+        const calledNumber = call.customParameters && call.customParameters.get
+          ? call.customParameters.get('CalledNumber')
+          : '';
         document.getElementById('incoming-number').textContent = caller;
+        document.getElementById('incoming-called-number').textContent =
+          calledNumber ? `on ${calledNumber}` : '';
         show('incoming-panel');
         hide('dialpad-panel');
-        log(`Incoming call from ${caller}`, 'info');
+        log(`Incoming call from ${caller}${calledNumber ? ' on ' + calledNumber : ''}`, 'info');
         try { document.getElementById('ring-audio').play(); } catch(e) {}
       });
 
@@ -724,5 +730,4 @@
   });
 </script>
 </body>
-</html>
-</html>
+</html>>

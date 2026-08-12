@@ -12,28 +12,12 @@
 
 require('dotenv').config();
 const express = require('express');
-const session = require('express-session');
 const twilio = require('twilio');
 const AccessToken = twilio.jwt.AccessToken;
 const VoiceGrant = AccessToken.VoiceGrant;
 const app = express();
 
-// Render sits behind a proxy — this is needed so secure cookies work correctly
-app.set('trust proxy', 1);
-
 app.use(express.urlencoded({ extended: false }));
-
-app.use(
-  session({
-    secret: process.env.SESSION_SECRET || 'change-this-secret-in-env',
-    resave: false,
-    saveUninitialized: false,
-    cookie: {
-      secure: 'auto', // sends secure cookies over https (Render), plain over http (localhost)
-      maxAge: 1000 * 60 * 60 * 24 * 7, // stay logged in for 7 days
-    },
-  })
-);
 
 const PORT = process.env.PORT || 3000;
 
@@ -55,92 +39,42 @@ const CALLER_ID_LIST = (TWILIO_CALLER_IDS || '')
   .filter(Boolean);
 
 // --- Simple password gate -------------------------------------------------
-// Protects the dialer page and every browser-facing route (/, /token,
-// /numbers, /status) behind one shared password set via APP_PASSWORD.
+// Uses the browser's own built-in login prompt (HTTP Basic Auth) instead of
+// a custom page — no HTML form, no cookies, no autocorrect/whitespace risk.
+// The browser handles storing the credentials for the session itself.
 // /voice and /incoming are NOT protected — those are called by Twilio
-// itself (no browser, no cookie), not by a person.
+// itself (no browser involved), not by a person.
 
-const LOGIN_PAGE = `<!DOCTYPE html>
-<html lang="en"><head><meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Softphone — Login</title>
-<style>
-  *{box-sizing:border-box;margin:0;padding:0;}
-  body{background:#0f1117;color:#e8eaf6;font-family:'Segoe UI',system-ui,sans-serif;
-    min-height:100vh;display:flex;align-items:center;justify-content:center;padding:1rem;}
-  .card{background:#1a1d27;border:1px solid #2e3248;border-radius:20px;width:100%;
-    max-width:340px;padding:2rem;box-shadow:0 8px 40px rgba(0,0,0,0.5);text-align:center;}
-  h1{font-size:1.2rem;margin-bottom:1.4rem;}
-  input{width:100%;background:#22263a;border:1px solid #2e3248;border-radius:8px;
-    color:#e8eaf6;font-size:1rem;padding:12px;outline:none;margin-bottom:1rem;}
-  input:focus{border-color:#4f6ef7;}
-  button{width:100%;padding:10px;border-radius:10px;border:none;font-size:0.9rem;
-    font-weight:600;cursor:pointer;background:#4f6ef7;color:#fff;}
-  button:hover{opacity:0.88;}
-  .error{color:#ef4444;font-size:0.82rem;margin-bottom:1rem;}
-</style></head>
-<body>
-  <div class="card">
-    <h1>📞 Softphone Login</h1>
-    <form method="POST" action="/login">
-      {{ERROR}}
-      <input type="password" name="password" placeholder="Password" autofocus required>
-      <button type="submit">Unlock</button>
-    </form>
-  </div>
-</body></html>`;
-
-app.get('/login', (req, res) => {
-  res.type('html').send(LOGIN_PAGE.replace('{{ERROR}}', ''));
-});
-
-app.post('/login', (req, res) => {
-  const submitted = (req.body.password || '').trim();
-  const expected = (process.env.APP_PASSWORD || '').trim();
-
-  // TEMPORARY debug log — only prints lengths, never the actual password.
-  // Remove this once login is working.
-  console.log(
-    `[login attempt] submitted length=${submitted.length}, expected length=${expected.length}, expected set=${!!process.env.APP_PASSWORD}`
-  );
-
-  if (expected && submitted === expected) {
-    req.session.authenticated = true;
-    return res.redirect('/');
-  }
-  res
-    .type('html')
-    .send(
-      LOGIN_PAGE.replace(
-        '{{ERROR}}',
-        '<div class="error">Wrong password. Try again.</div>'
-      )
-    );
-});
-
-app.get('/logout', (req, res) => {
-  req.session.destroy(() => res.redirect('/login'));
-});
-
-// Everything below this line requires a logged-in session, EXCEPT
-// /voice and /incoming, which Twilio itself calls and can't log into.
-app.use((req, res, next) => {
-  if (
-    req.path === '/login' ||
-    req.path === '/voice' ||
-    req.path === '/incoming'
-  ) {
+function requireAuth(req, res, next) {
+  if (req.path === '/voice' || req.path === '/incoming') {
     return next();
   }
-  if (req.session && req.session.authenticated) {
-    return next();
-  }
-  if (req.path.startsWith('/token') || req.path.startsWith('/numbers') || req.path.startsWith('/status')) {
-    return res.status(401).json({ error: 'Not logged in' });
-  }
-  return res.redirect('/login');
-});
 
+  const expectedUser = (process.env.APP_USERNAME || 'admin').trim();
+  const expectedPass = (process.env.APP_PASSWORD || '').trim();
+
+  if (!expectedPass) {
+    // No password configured on the server at all — fail loudly instead
+    // of silently letting everyone in.
+    return res.status(500).send('APP_PASSWORD is not set on the server.');
+  }
+
+  const header = req.headers.authorization || '';
+  if (header.startsWith('Basic ')) {
+    const decoded = Buffer.from(header.slice(6), 'base64').toString('utf8');
+    const sep = decoded.indexOf(':');
+    const user = sep === -1 ? decoded : decoded.slice(0, sep);
+    const pass = sep === -1 ? '' : decoded.slice(sep + 1);
+    if (user === expectedUser && pass === expectedPass) {
+      return next();
+    }
+  }
+
+  res.set('WWW-Authenticate', 'Basic realm="Softphone"');
+  return res.status(401).send('Authentication required.');
+}
+
+app.use(requireAuth);
 app.use(express.static(__dirname));
 // --------------------------------------------------------------------------
 
